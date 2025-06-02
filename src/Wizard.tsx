@@ -8,7 +8,7 @@ import { Textarea } from './ui/Textarea'
 
 type WizardProps = {
   offerLink: string | null
-  setRemote: (value: string) => void
+  setRemote: () => void
   setRemoteSDP: (value: string) => void
   remoteSDP: string
   mode: Mode

@@ -1,4 +1,3 @@
-import React from 'react'
 import { Mic, MicOff, PhoneOff } from 'lucide-react'
 
 type CallControlsProps = {
@@ -26,7 +25,6 @@ export function CallControls({
       style={{}}
     >
       <div className="flex flex-row gap-6 pointer-events-auto">
-        {/* Mute / Unmute */}
         <button
           onClick={onToggleMute}
           disabled={disableMute}
@@ -45,7 +43,7 @@ export function CallControls({
             <Mic className="w-7 h-7 text-white" />
           )}
         </button>
-        {/* Disconnect */}
+
         <button
           onClick={onDisconnect}
           disabled={disableDisconnect}
