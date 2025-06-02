@@ -11,8 +11,10 @@ export function useCallControls({
 
   const toggleMute = () => {
     if (streamRef.current) {
-      streamRef.current.getAudioTracks().forEach((track) => {
-        track.enabled = !muted
+      const tracks = streamRef.current.getAudioTracks()
+
+      tracks.forEach((track) => {
+        track.enabled = muted
       })
       setMuted((m) => !m)
     }
