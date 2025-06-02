@@ -1,6 +1,15 @@
 import './App.css'
 import { useEffect, useRef, useState } from 'react'
 
+import { Mic, MicOff, PhoneOff } from 'lucide-react'
+import { FullScreenBackdrop } from './ui/FullScreenBackdrop'
+import type { Mode } from './types'
+import { Wizard } from './Wizard'
+import { Spinner } from './ui/Spinner'
+import { FailedConnectionState } from './ui/FailedConnectionState'
+import { CallControls } from './ui/CallControls'
+import { ClosedConnectionState } from './ui/ClosedConnectionState'
+
 const encodeSDP = (sdp: RTCSessionDescriptionInit) => encodeURIComponent(btoa(JSON.stringify(sdp)))
 const decodeSDP = (encoded: string) => JSON.parse(atob(decodeURIComponent(encoded)))
 
@@ -14,8 +23,35 @@ export default function App() {
   const [remoteSDP, setRemoteSDP] = useState('')
   const [stream, setStream] = useState<MediaStream | null>(null)
   const [offerLink, setOfferLink] = useState<string | null>(null)
-  const [mode, setMode] = useState<'idle' | 'offering' | 'answering'>('idle')
+  const [mode, setMode] = useState<Mode>('idle')
   const [autoOfferLoaded, setAutoOfferLoaded] = useState(false)
+  const [connectionState, setConnectionState] = useState<RTCPeerConnectionState>('new')
+  const [muted, setMuted] = useState(false)
+
+  const toggleMute = () => {
+    if (stream) {
+      stream.getAudioTracks().forEach((track) => {
+        track.enabled = !muted
+      })
+      setMuted((m) => !m)
+    }
+  }
+
+  const disconnect = () => {
+    if (pcRef.current) {
+      pcRef.current.close()
+      setPc(null)
+    }
+    if (stream) {
+      stream.getTracks().forEach((track) => track.stop())
+      setStream(null)
+    }
+    setOfferLink(null)
+    setLocalSDP('')
+    setRemoteSDP('')
+    setMode('idle')
+    setMuted(false)
+  }
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -74,6 +110,11 @@ export default function App() {
           }
         }
 
+        _pc.onconnectionstatechange = () => {
+          console.log(_pc.connectionState)
+          setConnectionState(_pc.connectionState)
+        }
+
         const localStream = await navigator.mediaDevices.getUserMedia({
           video: true,
           audio: true,
@@ -94,6 +135,22 @@ export default function App() {
 
     autoStart()
   }, [])
+
+  useEffect(() => {
+    if (pcRef.current && stream && mode !== 'answering') {
+      createOffer()
+    }
+  }, [pc, stream, mode])
+
+  useEffect(() => {
+    if (stream && connectionState === 'connecting') {
+      stream.getTracks().forEach((track) => {
+        track.onended = () => {
+          console.log('Remote track ended – peer się rozłączył!')
+        }
+      })
+    }
+  }, [connectionState, stream])
 
   const createOffer = async () => {
     if (!pcRef.current || !stream) {
@@ -117,132 +174,50 @@ export default function App() {
     }
   }
 
-  const createAnswer = async () => {
-    if (!pcRef.current) return
-    const answer = await pcRef.current.createAnswer()
-    await pcRef.current.setLocalDescription(answer)
-    setLocalSDP(JSON.stringify(answer, null, 2))
-  }
-
-  const setAnswer = async () => {
-    if (!pcRef.current) return
-    try {
-      const desc = JSON.parse(remoteSDP)
-      await pcRef.current.setRemoteDescription(new RTCSessionDescription(desc))
-    } catch {
-      alert('SDP niepoprawne')
-    }
-  }
-
   return (
-    <div className="p-4 flex flex-col items-center bg-gray-900 min-h-screen text-white">
-      <h1 className="text-2xl mb-4">WebRTC P2P Demo (link SDP)</h1>
-      <div className="flex gap-8 mb-6">
-        <div>
-          <span className="block mb-2">Your Camera</span>
-          <video
-            ref={localVideoRef}
-            autoPlay
-            playsInline
-            muted
-            className="w-64 h-48 bg-black rounded"
-          />
-        </div>
-        <div>
-          <span className="block mb-2">Remote Camera</span>
-          <video ref={remoteVideoRef} autoPlay playsInline className="w-64 h-48 bg-black rounded" />
-        </div>
-      </div>
-      <div className="flex gap-4 mb-8">
-        <button
-          className="bg-green-600 px-4 py-2 rounded"
-          onClick={createOffer}
-          disabled={!pc || !stream || mode === 'answering'}
-        >
-          Create Offer & Link
-        </button>
-        {mode === 'answering' && (
-          <>
-            <button
-              className="bg-pink-600 px-4 py-2 rounded"
-              onClick={setRemote}
-              disabled={!remoteSDP || !pc}
-            >
-              Set Remote Offer
-            </button>
-            <button
-              className="bg-yellow-600 px-4 py-2 rounded"
-              onClick={createAnswer}
-              disabled={!pc}
-            >
-              Create Answer
-            </button>
-          </>
-        )}
-        {mode === 'offering' && (
-          <button
-            className="bg-purple-600 px-4 py-2 rounded"
-            onClick={setAnswer}
-            disabled={!remoteSDP || !pc}
-          >
-            Set Remote Answer
-          </button>
-        )}
-      </div>
-      {offerLink && (
-        <div className="w-full max-w-2xl mb-4">
-          <label className="block mb-1 font-bold text-green-400">
-            Link z offerem – wyślij znajomemu:
-          </label>
-          <input
-            value={offerLink}
-            readOnly
-            className="w-full bg-gray-800 p-2 rounded text-xs font-mono mb-2"
-            onFocus={(e) => e.target.select()}
-          />
-        </div>
+    <>
+      <video
+        ref={localVideoRef}
+        autoPlay
+        playsInline
+        muted
+        className={
+          connectionState === 'new'
+            ? 'bg-black rounded w-screen h-screen object-cover'
+            : 'fixed bottom-4 right-4  w-64 h-36 rounded-2xl border border-gray-300 dark:border-gray-700 shadow-lg bg-black object-cover z-50'
+        }
+      />
+
+      <video
+        ref={remoteVideoRef}
+        autoPlay
+        playsInline
+        className="bg-black rounded w-screen h-screen object-cover"
+      />
+
+      <CallControls muted={muted} onToggleMute={toggleMute} onDisconnect={disconnect} />
+
+      {'new' === connectionState && (
+        <Wizard
+          offerLink={offerLink}
+          setRemote={setRemote}
+          remoteSDP={remoteSDP}
+          mode={mode}
+          localSDP={localSDP}
+          setRemoteSDP={setRemoteSDP}
+        />
       )}
-      <div className="w-full max-w-2xl mb-4">
-        <label className="block mb-1">Local SDP (skopiuj/wklej do peer):</label>
-        <textarea
-          value={localSDP}
-          readOnly
-          rows={6}
-          className="w-full bg-gray-800 p-2 rounded text-xs font-mono"
-        />
-      </div>
-      <div className="w-full max-w-2xl mb-4">
-        <label className="block mb-1">Remote SDP (wklej z peer lub z linka):</label>
-        <textarea
-          value={remoteSDP}
-          onChange={(e) => setRemoteSDP(e.target.value)}
-          rows={6}
-          className="w-full bg-gray-800 p-2 rounded text-xs font-mono"
-        />
-      </div>
-      <ol className="mt-6 text-xs opacity-70 list-decimal max-w-2xl mx-auto">
-        <li>
-          Peer A: kliknij <b>Create Offer & Link</b>.
-        </li>
-        <li>
-          Wyślij wygenerowany <b>link</b> Peerowi B (np. Messenger/Slack).
-        </li>
-        <li>
-          Peer B: otwiera link, kamera odpala się, kliknij <b>Set Remote Offer</b>, potem{' '}
-          <b>Create Answer</b>.
-        </li>
-        <li>
-          Peer B: skopiuj <b>Local SDP</b> i wyślij Peerowi A.
-        </li>
-        <li>
-          Peer A: wklej do <b>Remote SDP</b>, kliknij <b>Set Remote Answer</b>.
-        </li>
-        <li>Po kilku sekundach powinno zadziałać (peer-to-peer obraz i dźwięk).</li>
-      </ol>
-      <p className="mt-6 text-xs opacity-50">
-        * Połączenie działa tylko przez wymianę linka i kopiowanie SDP – czysty frontend, zero
-        backendu.
-      </p>
-    </div>
+
+      {'connecting' === connectionState && (
+        <FullScreenBackdrop>
+          <div className="flex min-h-64 flex items-center justify-center">
+            <Spinner />
+          </div>
+        </FullScreenBackdrop>
+      )}
+
+      {'failed' === connectionState && <FailedConnectionState />}
+      {['closed', 'disconnected'].includes(connectionState) && <ClosedConnectionState />}
+    </>
   )
 }
